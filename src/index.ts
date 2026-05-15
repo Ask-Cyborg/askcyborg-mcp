@@ -6,13 +6,15 @@
  * Cursor, Cline, Continue, Windsurf, ChatGPT, mcp.so, Pulse MCP.
  *
  * Spec: https://modelcontextprotocol.io/specification/2025-03-26
+ *
+ * Note: This deliberately does NOT use the @modelcontextprotocol/sdk's
+ * Server class because that SDK ships a transport layer designed for
+ * stdio + Node.js. Cloudflare Workers don't have stdio. Instead this
+ * file implements the MCP JSON-RPC subset directly: initialize,
+ * tools/list, tools/call. The protocol surface is tiny and the SDK
+ * value-add is mostly schemas, which we duplicate here as plain JSON
+ * Schemas in each tool module.
  */
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
 
 import { searchCompaniesTool, runSearchCompanies } from "./tools/search.js";
 import { getCompanyReportTool, runGetCompanyReport } from "./tools/report.js";
@@ -23,61 +25,110 @@ import { askCyborgConfig } from "./lib/config.js";
 interface Env {
   ASKCYBORG_API_BASE: string;
   RATE_LIMIT_FREE_PER_MIN: string;
-  SUPABASE_URL: string;
-  SUPABASE_ANON_KEY: string;
+  SUPABASE_URL?: string;
+  SUPABASE_ANON_KEY?: string;
 }
 
-function buildServer() {
-  const server = new Server(
-    {
-      name: "askcyborg-mcp",
-      version: "0.1.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    },
-  );
+interface JsonRpcRequest {
+  jsonrpc: "2.0";
+  id?: number | string | null;
+  method: string;
+  params?: Record<string, unknown>;
+}
 
-  // ---- tools/list ----
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      searchCompaniesTool,
-      getCompanyReportTool,
-      getCyborgScoreTool,
-      compareCompaniesTool,
-    ],
-  }));
+interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id: number | string | null;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}
 
-  // ---- tools/call ----
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    switch (name) {
-      case "search_companies":
-        return runSearchCompanies(args ?? {});
-      case "get_company_report":
-        return runGetCompanyReport(args ?? {});
-      case "get_cyborg_score":
-        return runGetCyborgScore(args ?? {});
-      case "compare_companies":
-        return runCompareCompanies(args ?? {});
+const SERVER_NAME = "askcyborg-mcp";
+const SERVER_VERSION = "0.1.0";
+const PROTOCOL_VERSION = "2025-03-26";
+
+const TOOLS = [
+  searchCompaniesTool,
+  getCompanyReportTool,
+  getCyborgScoreTool,
+  compareCompaniesTool,
+];
+
+async function callTool(name: string, args: Record<string, unknown>) {
+  switch (name) {
+    case "search_companies":
+      return runSearchCompanies(args);
+    case "get_company_report":
+      return runGetCompanyReport(args);
+    case "get_cyborg_score":
+      return runGetCyborgScore(args);
+    case "compare_companies":
+      return runCompareCompanies(args);
+    default:
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        isError: true,
+      };
+  }
+}
+
+async function handleJsonRpc(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+  const id = req.id ?? null;
+  try {
+    switch (req.method) {
+      case "initialize":
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: PROTOCOL_VERSION,
+            capabilities: { tools: {} },
+            serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+          },
+        };
+
+      case "initialized":
+      case "notifications/initialized":
+        // Per spec: clients send this notification after initialize; no response
+        // expected for notifications (id is absent), but we tolerate both.
+        return { jsonrpc: "2.0", id, result: {} };
+
+      case "tools/list":
+        return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+
+      case "tools/call": {
+        const params = req.params ?? {};
+        const name = typeof params.name === "string" ? params.name : "";
+        const args =
+          typeof params.arguments === "object" && params.arguments !== null
+            ? (params.arguments as Record<string, unknown>)
+            : {};
+        const result = await callTool(name, args);
+        return { jsonrpc: "2.0", id, result };
+      }
+
+      case "ping":
+        return { jsonrpc: "2.0", id, result: {} };
+
       default:
         return {
-          content: [{ type: "text", text: `Unknown tool: ${name}` }],
-          isError: true,
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: `Method not found: ${req.method}` },
         };
     }
-  });
-
-  return server;
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32603, message: `Internal error: ${message}` },
+    };
+  }
 }
 
-/**
- * Per-isolate, approximate rate limiter. Keyed by IP address.
- * Production hardening: replace with Cloudflare Durable Objects or
- * Workers Rate Limiting Rules for cross-isolate accuracy.
- */
+// Per-isolate, approximate rate limiter. Keyed by IP. Replace with Durable
+// Objects for cross-isolate accuracy in v0.2.
 const rateLimitState = new Map<string, { windowStart: number; count: number }>();
 function isRateLimited(ip: string, maxPerMin: number): boolean {
   if (!ip || ip === "unknown") return false;
@@ -91,53 +142,48 @@ function isRateLimited(ip: string, maxPerMin: number): boolean {
   return entry.count > maxPerMin;
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Session-Id",
+  "Access-Control-Max-Age": "86400",
+};
+
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    // Propagate env to the tool implementations via a module-level config object.
-    // Cloudflare Workers don't allow Node-style globals; this is the simplest
-    // pattern for sharing env without threading it through every function.
     askCyborgConfig.apiBase = env.ASKCYBORG_API_BASE;
-    askCyborgConfig.supabaseUrl = env.SUPABASE_URL;
-    askCyborgConfig.supabaseAnonKey = env.SUPABASE_ANON_KEY;
+    askCyborgConfig.supabaseUrl = env.SUPABASE_URL ?? "";
+    askCyborgConfig.supabaseAnonKey = env.SUPABASE_ANON_KEY ?? "";
 
     const url = new URL(request.url);
 
-    // CORS preflight — MCP clients (especially browser-based Cursor extensions)
-    // expect liberal CORS. Tighten in production once auth is in place.
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Session-Id",
-          "Access-Control-Max-Age": "86400",
-        },
-      });
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    // Health check / discovery endpoint
+    // Discovery / health
     if (url.pathname === "/" || url.pathname === "/health") {
       return new Response(
         JSON.stringify({
-          name: "askcyborg-mcp",
-          version: "0.1.0",
+          name: SERVER_NAME,
+          version: SERVER_VERSION,
+          protocol: PROTOCOL_VERSION,
           description:
             "Official MCP server for AskCyborg — search and retrieve AI company research, analyst-debate audio briefings, and Cyborg Score ratings.",
           docs: "https://github.com/Ask-Cyborg/askcyborg-mcp",
-          tools: ["search_companies", "get_company_report", "get_cyborg_score", "compare_companies"],
+          tools: TOOLS.map((t) => t.name),
+          mcp_endpoint: "/mcp",
         }),
         {
           headers: {
             "Content-Type": "application/json; charset=utf-8",
-            "Access-Control-Allow-Origin": "*",
+            ...CORS_HEADERS,
           },
         },
       );
     }
 
-    // MCP endpoint — Streamable HTTP transport per spec 2025-03-26.
-    // Accepts POST with JSON-RPC payload; returns JSON or SSE.
+    // MCP JSON-RPC endpoint
     if (url.pathname === "/mcp" || url.pathname === "/sse") {
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
       const maxPerMin = parseInt(env.RATE_LIMIT_FREE_PER_MIN ?? "20", 10);
@@ -153,59 +199,55 @@ export default {
             headers: {
               "Content-Type": "application/json",
               "Retry-After": "60",
-              "Access-Control-Allow-Origin": "*",
+              ...CORS_HEADERS,
             },
           },
         );
       }
 
       if (request.method !== "POST") {
-        return new Response("Method not allowed", { status: 405 });
+        return new Response("Method not allowed. POST a JSON-RPC body.", {
+          status: 405,
+          headers: { ...CORS_HEADERS, Allow: "POST, OPTIONS" },
+        });
       }
-
-      // Parse JSON-RPC request, route through MCP server
-      const server = buildServer();
 
       let body: unknown;
       try {
         body = await request.json();
-      } catch (e) {
+      } catch (_e) {
         return new Response(
           JSON.stringify({
             jsonrpc: "2.0",
             error: { code: -32700, message: "Parse error" },
             id: null,
           }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          },
         );
       }
 
-      // Handle JSON-RPC request directly via the Server's internal dispatch.
-      // This is a simplified single-request handler. For full Streamable HTTP
-      // (session management, server-initiated requests, SSE), wire up the
-      // MCP SDK's transport layer in a follow-up.
-      try {
-        // @ts-expect-error — internal API; will switch to official transport in v0.2
-        const response = await server._oncrequest(body);
-        return new Response(JSON.stringify(response), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
-        return new Response(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            error: { code: -32603, message: `Internal error: ${message}` },
-            id: (body as { id?: unknown })?.id ?? null,
-          }),
-          { status: 500, headers: { "Content-Type": "application/json" } },
+      // Support batch requests (array) or single request
+      if (Array.isArray(body)) {
+        const responses = await Promise.all(
+          body.map((req) => handleJsonRpc(req as JsonRpcRequest)),
         );
+        return new Response(JSON.stringify(responses), {
+          headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        });
       }
+
+      const response = await handleJsonRpc(body as JsonRpcRequest);
+      return new Response(JSON.stringify(response), {
+        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      });
     }
 
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found. See / for discovery.", {
+      status: 404,
+      headers: CORS_HEADERS,
+    });
   },
 };
