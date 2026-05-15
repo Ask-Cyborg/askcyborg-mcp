@@ -1,0 +1,56 @@
+name: Deploy MCP Server to Cloudflare Workers
+
+# Deploys the AskCyborg MCP server to Cloudflare Workers on every push to main.
+#
+# Requires two repo secrets:
+#   CLOUDFLARE_API_TOKEN    — Workers Scripts:Edit + Account:Read
+#                              Create at: https://dash.cloudflare.com/profile/api-tokens
+#                              Use template "Edit Cloudflare Workers" and scope to
+#                              the AskCyborg account.
+#   CLOUDFLARE_ACCOUNT_ID   — 64e88725aa8e331555cc09837bf52b6e (AskCyborg account)
+#
+# After adding both secrets at:
+#   https://github.com/Ask-Cyborg/askcyborg-mcp/settings/secrets/actions
+# the next push to main auto-deploys.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install deps
+        run: bun install
+      - name: TypeScript check
+        run: bun run typecheck
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+      - name: Smoke test deployed endpoint
+        run: |
+          set -euo pipefail
+          # Wait for edge propagation
+          sleep 10
+          # Health endpoint
+          curl -sf "https://askcyborg-mcp.${{ secrets.CLOUDFLARE_SUBDOMAIN || 'steve-64e' }}.workers.dev/health" \
+            | grep -q "askcyborg-mcp" || (echo "health check failed" && exit 1)
+          # tools/list endpoint
+          curl -sf -X POST "https://askcyborg-mcp.${{ secrets.CLOUDFLARE_SUBDOMAIN || 'steve-64e' }}.workers.dev/mcp" \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            | grep -q '"name":"search_companies"' || (echo "tools/list missing search_companies" && exit 1)
+          echo "✓ deploy verified"
