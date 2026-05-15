@@ -202,6 +202,51 @@ export default {
       );
     }
 
+
+    // SEP-1649 / SEP-2127 — static MCP server card for discovery (Smithery, etc.)
+    if (url.pathname === "/.well-known/mcp/server-card.json") {
+      return new Response(
+        JSON.stringify({
+          $schema: "https://modelcontextprotocol.io/schemas/server-card/v1.0",
+          version: "1.0",
+          protocolVersion: PROTOCOL_VERSION,
+          serverInfo: {
+            name: SERVER_NAME,
+            version: SERVER_VERSION,
+            title: "AskCyborg",
+            description:
+              "Analyst-debate research on every public and private company. Reports, scores, audio briefings.",
+            homepage: "https://askcyborg.com/mcp",
+            documentation: "https://github.com/Ask-Cyborg/askcyborg-mcp",
+            license: "MIT",
+          },
+          transport: {
+            type: "streamable-http",
+            url: "https://mcp.askcyborg.com/mcp",
+          },
+          capabilities: {
+            tools: true,
+            resources: false,
+            prompts: false,
+          },
+          authentication: {
+            required: false,
+          },
+          tools: TOOLS.map((t) => ({
+            name: t.name,
+            description: t.description,
+          })),
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "public, max-age=300",
+            ...CORS_HEADERS,
+          },
+        },
+      );
+    }
+
     // MCP JSON-RPC endpoint (Streamable HTTP transport)
     if (url.pathname === "/mcp" || url.pathname === "/sse") {
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -226,7 +271,17 @@ export default {
 
       // GET: client opens an SSE stream for server-initiated messages.
       // We're stateless and never push, so return an immediately-closed stream.
-      if (request.method === "GET") {
+      if (request.method === "GET" || request.method === "HEAD") {
+        // For HEAD: return headers only (no body).
+        const sseHeaders = {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          ...CORS_HEADERS,
+        };
+        if (request.method === "HEAD") {
+          return new Response(null, { status: 200, headers: sseHeaders });
+        }
         const stream = new ReadableStream({
           start(controller) {
             // Single comment line keeps some SSE parsers happy, then close.
@@ -236,12 +291,7 @@ export default {
         });
         return new Response(stream, {
           status: 200,
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-            ...CORS_HEADERS,
-          },
+          headers: sseHeaders,
         });
       }
 
