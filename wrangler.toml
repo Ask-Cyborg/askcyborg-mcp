@@ -3,10 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Production routes
-# Uncomment to bind to a subdomain (e.g., mcp.askcyborg.com):
-# [env.production]
-# routes = [{ pattern = "mcp.askcyborg.com/*", custom_domain = true }]
+# Keep workers.dev URL alive (fallback if custom domain is misconfigured).
+workers_dev = true
+
+# Bind custom domain. Requires askcyborg.com zone in same Cloudflare account
+# (account 64e88725aa8e331555cc09837bf52b6e) — confirmed.
+routes = [
+  { pattern = "mcp.askcyborg.com", custom_domain = true }
+]
 
 # Public read-only API key for the free tier rate-limit bucket.
 # Per-user API keys are minted by the AskCyborg backend and stored client-side.
