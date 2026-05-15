@@ -68,7 +68,7 @@ export async function runCompareCompanies(args: Record<string, unknown>) {
     if (insights.length === 0) continue;
     lines.push(`## ${name} — Top Insights`);
     for (const i of insights.slice(0, 3)) {
-      lines.push(`- ${i.insight ?? ""}`);
+      lines.push(`- ${i}`);
     }
     lines.push("");
   }

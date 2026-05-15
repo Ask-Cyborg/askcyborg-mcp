@@ -14,12 +14,13 @@ export interface PreviewQuickData {
   executiveSummary?: {
     leadParagraph?: string;
     strategicProfile?: string;
-    bullCase?: string;
-    bearCase?: string;
   };
-  insights?: Array<{ category?: string; insight?: string }>;
-  competitors?: Array<{ name?: string; positioning?: string }>;
-  recentDevelopments?: Array<{ date?: string; summary?: string }>;
+  // Each insight is a single sentence/paragraph string, not an object.
+  insights?: string[];
+  // Competitors are { name, tagline, companyName } objects (the company being competed against).
+  competitors?: Array<{ name?: string; tagline?: string; companyName?: string }>;
+  // Each development is a string typically prefixed with "(Month YYYY) ..."
+  recentDevelopments?: string[];
   entityIdentifiers?: Record<string, unknown>;
 }
 

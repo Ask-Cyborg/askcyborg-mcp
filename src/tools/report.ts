@@ -44,8 +44,6 @@ export async function runGetCompanyReport(args: Record<string, unknown>) {
   const scoreRationale = qd.cyborgScore?.rationale ?? "";
   const lead = qd.executiveSummary?.leadParagraph ?? "";
   const strategic = qd.executiveSummary?.strategicProfile ?? "";
-  const bull = qd.executiveSummary?.bullCase ?? "";
-  const bear = qd.executiveSummary?.bearCase ?? "";
   const industry = qd.industryAnalysis?.industry ?? "";
 
   const blocks: string[] = [];
@@ -58,14 +56,12 @@ export async function runGetCompanyReport(args: Record<string, unknown>) {
   }
   if (lead) blocks.push(`## Executive Summary\n${lead}`);
   if (strategic) blocks.push(`## Strategic Profile\n${strategic}`);
-  if (bull) blocks.push(`## Bull Case\n${bull}`);
-  if (bear) blocks.push(`## Bear Case\n${bear}`);
 
   const insights = qd.insights ?? [];
   if (insights.length > 0) {
     blocks.push(
       `## Key Insights\n${insights
-        .map((i, idx) => `${idx + 1}. ${i.insight ?? ""}${i.category ? ` _(${i.category})_` : ""}`)
+        .map((i, idx) => `${idx + 1}. ${i}`)
         .join("\n")}`,
     );
   }
@@ -74,7 +70,10 @@ export async function runGetCompanyReport(args: Record<string, unknown>) {
   if (competitors.length > 0) {
     blocks.push(
       `## Competitive Landscape\n${competitors
-        .map((c) => `- **${c.name ?? ""}** — ${c.positioning ?? ""}`)
+        .map((c) => {
+          const owner = c.companyName && c.companyName !== c.name ? ` (${c.companyName})` : "";
+          return `- **${c.name ?? ""}**${owner} — ${c.tagline ?? ""}`;
+        })
         .join("\n")}`,
     );
   }
@@ -84,7 +83,7 @@ export async function runGetCompanyReport(args: Record<string, unknown>) {
     blocks.push(
       `## Recent Developments\n${developments
         .slice(0, 5)
-        .map((d) => `- ${d.date ? `**${d.date}** — ` : ""}${d.summary ?? ""}`)
+        .map((d) => `- ${d}`)
         .join("\n")}`,
     );
   }
