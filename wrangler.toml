@@ -1,0 +1,20 @@
+name = "askcyborg-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Production routes
+# Uncomment to bind to a subdomain (e.g., mcp.askcyborg.com):
+# [env.production]
+# routes = [{ pattern = "mcp.askcyborg.com/*", custom_domain = true }]
+
+# Public read-only API key for the free tier rate-limit bucket.
+# Per-user API keys are minted by the AskCyborg backend and stored client-side.
+# The free tier shares this anonymous key with a low per-IP rate limit.
+[vars]
+ASKCYBORG_API_BASE = "https://askcyborg.com"
+RATE_LIMIT_FREE_PER_MIN = "20"
+
+# These are populated via wrangler secrets, not committed:
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_ANON_KEY

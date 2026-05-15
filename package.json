@@ -1,0 +1,42 @@
+{
+  "name": "@ask-cyborg/askcyborg-mcp",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Official MCP server for AskCyborg — search and retrieve AI company research, analyst-debate audio briefings, and the proprietary Cyborg Score directly from Claude, Cursor, Cline, ChatGPT, and other MCP clients.",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:production": "wrangler deploy --env production",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'no linter wired yet'"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "anthropic",
+    "askcyborg",
+    "company-research",
+    "ai-analyst",
+    "cyborg-score",
+    "cloudflare-workers"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ask-Cyborg/askcyborg-mcp.git"
+  },
+  "bugs": "https://github.com/Ask-Cyborg/askcyborg-mcp/issues",
+  "homepage": "https://askcyborg.com",
+  "license": "MIT",
+  "author": "AskCyborg",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.95.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

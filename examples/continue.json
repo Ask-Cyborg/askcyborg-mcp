@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "askcyborg": {
+      "transport": {
+        "type": "http",
+        "url": "https://mcp.askcyborg.com/mcp"
+      }
+    }
+  }
+}
