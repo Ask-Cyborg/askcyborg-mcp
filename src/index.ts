@@ -72,7 +72,19 @@ async function callTool(name: string, args: Record<string, unknown>) {
   }
 }
 
-async function handleJsonRpc(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+// A JSON-RPC message is a notification iff `id` is absent (per JSON-RPC 2.0).
+// Notifications MUST NOT receive a response.
+function isNotification(req: JsonRpcRequest): boolean {
+  return !("id" in req) || req.id === undefined;
+}
+
+async function handleJsonRpc(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+  // Notifications: process side-effects but return no response.
+  if (isNotification(req)) {
+    // initialize / initialized / notifications/* — accept silently.
+    return null;
+  }
+
   const id = req.id ?? null;
   try {
     switch (req.method) {
@@ -82,15 +94,15 @@ async function handleJsonRpc(req: JsonRpcRequest): Promise<JsonRpcResponse> {
           id,
           result: {
             protocolVersion: PROTOCOL_VERSION,
-            capabilities: { tools: {} },
+            capabilities: { tools: { listChanged: false } },
             serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
           },
         };
 
       case "initialized":
       case "notifications/initialized":
-        // Per spec: clients send this notification after initialize; no response
-        // expected for notifications (id is absent), but we tolerate both.
+        // Defensive — these are normally notifications, but tolerate the
+        // request form too.
         return { jsonrpc: "2.0", id, result: {} };
 
       case "tools/list":
@@ -144,10 +156,17 @@ function isRateLimited(ip: string, maxPerMin: number): boolean {
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Session-Id",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id, Last-Event-ID",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id",
   "Access-Control-Max-Age": "86400",
 };
+
+// Generate a stable-ish session id. We're stateless so the value is purely
+// advisory — clients echo it back, but we don't enforce continuity.
+function generateSessionId(): string {
+  return crypto.randomUUID();
+}
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -183,7 +202,7 @@ export default {
       );
     }
 
-    // MCP JSON-RPC endpoint
+    // MCP JSON-RPC endpoint (Streamable HTTP transport)
     if (url.pathname === "/mcp" || url.pathname === "/sse") {
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
       const maxPerMin = parseInt(env.RATE_LIMIT_FREE_PER_MIN ?? "20", 10);
@@ -205,10 +224,37 @@ export default {
         );
       }
 
+      // GET: client opens an SSE stream for server-initiated messages.
+      // We're stateless and never push, so return an immediately-closed stream.
+      if (request.method === "GET") {
+        const stream = new ReadableStream({
+          start(controller) {
+            // Single comment line keeps some SSE parsers happy, then close.
+            controller.enqueue(new TextEncoder().encode(": stream open\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+            ...CORS_HEADERS,
+          },
+        });
+      }
+
+      // DELETE: client asks to terminate a session. We have no session state,
+      // so just acknowledge.
+      if (request.method === "DELETE") {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      }
+
       if (request.method !== "POST") {
         return new Response("Method not allowed. POST a JSON-RPC body.", {
           status: 405,
-          headers: { ...CORS_HEADERS, Allow: "POST, OPTIONS" },
+          headers: { ...CORS_HEADERS, Allow: "GET, POST, DELETE, OPTIONS" },
         });
       }
 
@@ -229,19 +275,47 @@ export default {
         );
       }
 
-      // Support batch requests (array) or single request
+      const sessionId =
+        request.headers.get("Mcp-Session-Id") ??
+        request.headers.get("mcp-session-id") ??
+        generateSessionId();
+
+      // Build the response. Notifications-only POSTs return 202.
+      // Batch with mixed notifications: drop nulls (notification responses).
       if (Array.isArray(body)) {
-        const responses = await Promise.all(
-          body.map((req) => handleJsonRpc(req as JsonRpcRequest)),
-        );
+        const responses = (
+          await Promise.all(body.map((r) => handleJsonRpc(r as JsonRpcRequest)))
+        ).filter((r): r is JsonRpcResponse => r !== null);
+
+        if (responses.length === 0) {
+          return new Response(null, {
+            status: 202,
+            headers: { "Mcp-Session-Id": sessionId, ...CORS_HEADERS },
+          });
+        }
         return new Response(JSON.stringify(responses), {
-          headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+          headers: {
+            "Content-Type": "application/json",
+            "Mcp-Session-Id": sessionId,
+            ...CORS_HEADERS,
+          },
         });
       }
 
       const response = await handleJsonRpc(body as JsonRpcRequest);
+      if (response === null) {
+        // Notification — return 202 Accepted with no body per JSON-RPC 2.0.
+        return new Response(null, {
+          status: 202,
+          headers: { "Mcp-Session-Id": sessionId, ...CORS_HEADERS },
+        });
+      }
       return new Response(JSON.stringify(response), {
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+        headers: {
+          "Content-Type": "application/json",
+          "Mcp-Session-Id": sessionId,
+          ...CORS_HEADERS,
+        },
       });
     }
 
