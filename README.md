@@ -11,9 +11,13 @@
 | Tool | Purpose |
 |---|---|
 | `search_companies` | Find companies in AskCyborg's corpus by name or industry keyword |
-| `get_company_report` | Fetch the executive summary, Cyborg Score, strategic profile, key insights, competitive landscape, and recent developments for a single company |
+| `get_company_report` | Full report — executive summary, Cyborg Score, strategic profile, top insights, competitors, recent developments |
 | `get_cyborg_score` | Quick rating-only lookup (1-10 + rationale) |
-| `compare_companies` | Side-by-side comparison of 2-5 companies on Cyborg Score, industry, and strategic profile |
+| `compare_companies` | Side-by-side comparison of 2–5 companies on Cyborg Score, industry, and strategic profile |
+| `find_competitors` | Named competitors with one-line strategic taglines |
+| `search_by_industry` | Discover companies in a sector, ranked by Cyborg Score |
+| `get_recent_developments` | Dated news, deals, leadership changes, financial events |
+| `get_top_insights` | Just the punchiest analyst-debate insights, faster than the full report |
 
 Each tool returns a structured Markdown response with a direct link to the full 30-page research report + 15-minute analyst-debate audio briefing on askcyborg.com.
 

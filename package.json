@@ -1,8 +1,8 @@
 {
   "name": "@ask-cyborg/askcyborg-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
-  "description": "Official MCP server for AskCyborg \u2014 search and retrieve AI company research, analyst-debate audio briefings, and the proprietary Cyborg Score directly from Claude, Cursor, Cline, ChatGPT, and other MCP clients.",
+  "description": "Official MCP server for AskCyborg — search and retrieve AI company research, analyst-debate audio briefings, and the proprietary Cyborg Score directly from Claude, Cursor, Cline, ChatGPT, and other MCP clients.",
   "main": "src/index.ts",
   "type": "module",
   "scripts": {
@@ -33,8 +33,7 @@
   "author": "AskCyborg",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
-    "typescript": "^5.6.0",
+    "typescript": "^5.9.3",
     "wrangler": "^3.95.0"
-  },
-  "dependencies": {}
+  }
 }

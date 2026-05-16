@@ -20,6 +20,10 @@ import { searchCompaniesTool, runSearchCompanies } from "./tools/search.js";
 import { getCompanyReportTool, runGetCompanyReport } from "./tools/report.js";
 import { getCyborgScoreTool, runGetCyborgScore } from "./tools/cyborgScore.js";
 import { compareCompaniesTool, runCompareCompanies } from "./tools/compare.js";
+import { findCompetitorsTool, runFindCompetitors } from "./tools/findCompetitors.js";
+import { searchByIndustryTool, runSearchByIndustry } from "./tools/searchByIndustry.js";
+import { getRecentDevelopmentsTool, runGetRecentDevelopments } from "./tools/getRecentDevelopments.js";
+import { getTopInsightsTool, runGetTopInsights } from "./tools/getTopInsights.js";
 import { askCyborgConfig } from "./lib/config.js";
 
 interface Env {
@@ -44,7 +48,7 @@ interface JsonRpcResponse {
 }
 
 const SERVER_NAME = "askcyborg-mcp";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.2.0";
 const PROTOCOL_VERSION = "2025-03-26";
 
 const TOOLS = [
@@ -52,6 +56,10 @@ const TOOLS = [
   getCompanyReportTool,
   getCyborgScoreTool,
   compareCompaniesTool,
+  findCompetitorsTool,
+  searchByIndustryTool,
+  getRecentDevelopmentsTool,
+  getTopInsightsTool,
 ];
 
 async function callTool(name: string, args: Record<string, unknown>) {
@@ -64,6 +72,14 @@ async function callTool(name: string, args: Record<string, unknown>) {
       return runGetCyborgScore(args);
     case "compare_companies":
       return runCompareCompanies(args);
+    case "find_competitors":
+      return runFindCompetitors(args);
+    case "search_by_industry":
+      return runSearchByIndustry(args);
+    case "get_recent_developments":
+      return runGetRecentDevelopments(args);
+    case "get_top_insights":
+      return runGetTopInsights(args);
     default:
       return {
         content: [{ type: "text", text: `Unknown tool: ${name}` }],

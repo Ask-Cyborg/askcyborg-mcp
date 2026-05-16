@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Ask-Cyborg/askcyborg-mcp",
   "title": "AskCyborg",
-  "description": "Analyst-debate research on every public and private company. Reports, scores, audio briefings.",
+  "description": "Analyst-debate research on every public and private company. 8 tools: search, score, compare, more.",
   "websiteUrl": "https://askcyborg.com/mcp",
   "repository": {
     "url": "https://github.com/Ask-Cyborg/askcyborg-mcp",
     "source": "github"
   },
-  "version": "0.1.1",
+  "version": "0.2.0",
   "remotes": [
     {
       "type": "streamable-http",
